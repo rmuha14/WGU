@@ -1,445 +1,571 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[45]:
+# In[3]:
 
 
 import pickle
-from collections import defaultdict
+
+import numpy as np
 import pandas as pd
+from time import time
+
+from feature_format import featureFormat, targetFeatureSplit
+from tester import dump_classifier_and_data
+
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.model_selection import GridSearchCV
+
+from matplotlib import pyplot as plt
 import seaborn as sns
-import matplotlib.pyplot as plt
-get_ipython().magic(u'pylab inline')
-# Change figure size into 8 by 6 inches
-matplotlib.rcParams['figure.figsize'] = (8, 6)
+sns.set_style('white')
 
 import warnings
-warnings.filterwarnings("ignore")
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
-from sklearn.feature_selection import SelectKBest
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, GridSearchCV
-from sklearn.naive_bayes import GaussianNB
-from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
-from sklearn import preprocessing
+warnings.filterwarnings('ignore')
 
-
-# In[15]:
-
-
-### Task 1: Select what features you'll use.
-### features_list is a list of strings, each of which is a feature name.
-### The first feature must be "poi".
-# You will need to use more features
-financial_features = ['salary', 'deferral_payments', 'total_payments', 'loan_advances', 'bonus', 'restricted_stock_deferred', 'deferred_income', 'total_stock_value', 'expenses', 'exercised_stock_options', 'other', 'long_term_incentive', 'restricted_stock', 'director_fees'] 
-email_features = ['to_messages', 'from_poi_to_this_person', 'from_messages', 'from_this_person_to_poi', 'shared_receipt_with_poi']
-poi_label = ['poi']
-features_list = poi_label + email_features + financial_features
+# Load the dataset
+with open("final_project_dataset.pkl", "rb") as data_file:
+    data_dict = pickle.load(data_file)
 
 
 # In[4]:
 
 
-# Load the dataset
-with open('final_project_dataset.pkl', 'rb') as data_file:
-    data_dict = pickle.load(data_file)
+# Converting the given pickled Enron data to a pandas dataframe.
+enron_df = pd.DataFrame.from_records(list(data_dict.values()))
+
+# Set the index of df to be the employees series:
+employees = pd.Series(list(data_dict.keys()))
+enron_df.set_index(employees, inplace=True)
+enron_df.head()
 
 
-# In[16]:
+# In[5]:
 
 
-# Total number of data points
-print("Total number of data points: %i" %len(data_dict))
-# Allocation across classes (POI/non-POI)
-poi = 0
-for person in data_dict:
-    if data_dict[person]['poi'] == True:
-       poi += 1
-print("Total number of poi: %i" % poi)
-print("Total number of non-poi: %i" % (len(data_dict) - poi))
-       
+print "Size of the enron dataframe: ", enron_df.shape
+print "Number of data points (people) in the dataset: ", len(enron_df)
+print "Number of Features in the Enron Dataset: ", len(enron_df.columns)
+
+# Counting the number of POIs and non-POIs in the given dataset.
+poi_count = enron_df.groupby('poi').size()
+print "Total number of POI's in the given dataset: ", poi_count.iloc[1]
+print "Total number of non-POI's in the given dataset: ", poi_count.iloc[0]
+
+
+# In[6]:
+
+
+enron_df.dtypes
 
 
 # In[7]:
 
 
-# Number of features
-print('There are {} features.'.format(len(list(data_dict.values())[0])))
-# Names of features
-list(list(data_dict.values())[0].keys())
+# Converting the datatypes in the given pandas dataframe 
+# into floating points for analysis and replace NaN with zeros.
+
+# Coerce numeric values into floats or ints; also change NaN to zero.
+enron_df_new = enron_df.apply(lambda x : pd.to_numeric(x, errors = 'coerce')).copy().fillna(np.nan)
+enron_df_new.head()
 
 
 # In[8]:
 
 
-# Features with missing values
-nan_counts_poi = defaultdict(int)
-nan_counts_non_poi = defaultdict(int)
-for data_point in data_dict.values():
-    if data_point['poi'] == True:
-        for feature, value in data_point.items():
-            if value == "NaN":
-                nan_counts_poi[feature] += 1
-    elif data_point['poi'] == False:
-        for feature, value in data_point.items():
-            if value == "NaN":
-                nan_counts_non_poi[feature] += 1
-    else:
-        print('Got an uncategorized person.')
-nan_counts_df = pd.DataFrame([nan_counts_poi, nan_counts_non_poi]).T
-nan_counts_df = nan_counts_df.fillna(value=0)
-nan_counts_df.columns = ['# NaN in POIs', '# NaN in non-POIs']
-nan_counts_df['# NaN total'] = nan_counts_df['# NaN in POIs'] +                                nan_counts_df['# NaN in non-POIs']
-nan_counts_df['% NaN in POIs'] = nan_counts_df['# NaN in POIs'] /                                           poi_counts[True] * 100
-nan_counts_df['% NaN in non-POIs'] = nan_counts_df['# NaN in non-POIs'] /                                           poi_counts[False] * 100
-nan_counts_df['% NaN total'] = nan_counts_df['# NaN total'] /                                           len(data_dict) * 100
-    
-nan_counts_df
+# Dropping column 'email_address' as it is not required in analysis.
+enron_df_new.drop('email_address', axis = 1, inplace = True)
 
+# Checking the changed shape of df.
+enron_df_new.shape
+
+
+# ## Outlier Investigation & Analyzing the Features
+# The features can be categorized as the following.
+# 
+# ### Financial Features (in US dollars):
+# salary deferral_payments total_payments loan_advances bonus restricted_stock_deferred deferred_income total_stock_value expenses exercised_stock_options other long_term_incentive restricted_stock director_fees
+# 
+# ### Email Features (count of emails):
+# to_messages email_address from_poi_to_this_person from_messages from_this_person_to_poi shared_receipt_with_poi
+# 
+# ### POI Labels (boolean):
+# poi
+# 
+# ### Financial Features: Bonus and Salary
+# 
+# Drawing scatterplot of Bonus vs Salary of Enron employees.
 
 # In[9]:
 
 
-# Plot missing values distribution
-ax = nan_counts_df.sort_values('# NaN total')[['% NaN in POIs', '% NaN in non-POIs']].plot(kind='barh', 
-                                                                                    stacked=False)
-ax.set_title('Percent of Missing Values Distribution')
-ax.set_xlabel('Percent of Missing Values')
-ax.set_ylabel('Variable Name')
+plt.scatter(enron_df_new['salary'][enron_df_new['poi'] == True],
+            enron_df_new['bonus'][enron_df_new['poi'] == True], 
+            color = 'r', label = 'POI')
+
+plt.scatter(enron_df_new['salary'][enron_df_new['poi'] == False],
+            enron_df_new['bonus'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
+    
+plt.xlabel("Salary")
+plt.ylabel("Bonus")
+plt.title("Scatterplot of Salary vs Bonus w.r.t POI")
+plt.legend(loc='upper left')
+plt.show() 
+
+
+# In[10]:
+
+
+# Finding the non-POI employee having maximum salary
+enron_df_new['salary'].argmax()
+
+
+# In[11]:
+
+
+# Deleting the row 'Total' from the dataframe
+enron_df_new.drop('TOTAL', axis = 0, inplace = True)
+
+# Drawing scatterplot with the modified dataframe
+plt.scatter(enron_df_new['salary'][enron_df_new['poi'] == True],
+            enron_df_new['bonus'][enron_df_new['poi'] == True], 
+            color = 'r', label = 'POI')
+
+plt.scatter(enron_df_new['salary'][enron_df_new['poi'] == False],
+            enron_df_new['bonus'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
+    
+plt.xlabel("Salary")
+plt.ylabel("Bonus")
+plt.title("Scatterplot of Salary vs Bonus w.r.t POI")
+plt.legend(loc='upper left')
+plt.show() 
+
+
+# In[12]:
+
+
+enron_df_new['bonus-to-salary_ratio'] = enron_df_new['bonus']/enron_df_new['salary']
+
+
+# In[13]:
+
+
+# Features of the index 'THE TRAVEL AGENCY IN THE PARK'
+enron_df_new.loc['THE TRAVEL AGENCY IN THE PARK']
+
+
+# In[14]:
+
+
+# Deleting the row with index 'THE TRAVEL AGENCY IN THE PARK'
+enron_df_new.drop('THE TRAVEL AGENCY IN THE PARK', axis = 0, inplace = True)
+
+
+# In[15]:
+
+
+enron_df_new['deferred_income'].describe()
+
+
+# In[16]:
+
+
+# Finding out the integer index locations of POIs and non-POIs.
+poi_rs = []
+non_poi_rs = []
+for i in range(len(enron_df_new['poi'])):
+    if enron_df_new['poi'][i] == True:
+        poi_rs.append(i+1)
+    else:
+        non_poi_rs.append(i+1)
+
+print("Length of po list: ", len(poi_rs))
+print("Length non-poi list: ", len(non_poi_rs))
 
 
 # In[17]:
 
 
-### Task 2: Remove outliers
-def plotOutliers(data_set, feature_x, feature_y):
-    """
-    This function takes a dict, 2 strings, and shows a 2d plot of 2 features
-    """
-    data = featureFormat(data_set, [feature_x, feature_y])
-    for point in data:
-        x = point[0]
-        y = point[1]
-        matplotlib.pyplot.scatter( x, y )
-    matplotlib.pyplot.xlabel(feature_x)
-    matplotlib.pyplot.ylabel(feature_y)
-    matplotlib.pyplot.show()
-# Visualize data to identify outliers
-print(plotOutliers(data_dict, 'total_payments', 'total_stock_value'))
-print(plotOutliers(data_dict, 'from_poi_to_this_person', 'from_this_person_to_poi'))
-print(plotOutliers(data_dict, 'salary', 'bonus'))
-print(plotOutliers(data_dict, 'total_payments', 'other'))
-identity = []
-for person in data_dict:
-    if data_dict[person]['total_payments'] != "NaN":
-        identity.append((person, data_dict[person]['total_payments']))
-print("Outlier:")
-print(sorted(identity, key = lambda x: x[1], reverse=True)[0:4])
+# Since 'deferred_income' is negative, for intuitive understanding,
+# a positive person of the variable is created for visualization.
+enron_df_new['deferred_income_p'] = enron_df_new['deferred_income'] * -1
 
-# Find persons whose financial features are all "NaN"
-fi_nan_dict = {}
-for person in data_dict:
-    fi_nan_dict[person] = 0
-    for feature in financial_features:
-        if data_dict[person][feature] == "NaN":
-            fi_nan_dict[person] += 1
-sorted(fi_nan_dict.items(), key=lambda x: x[1])
+plt.scatter(non_poi_rs,
+            enron_df_new['deferred_income_p'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
 
-# Find persons whose email features are all "NaN"
-email_nan_dict = {}
-for person in data_dict:
-    email_nan_dict[person] = 0
-    for feature in email_features:
-        if data_dict[person][feature] == "NaN":
-            email_nan_dict[person] += 1
-sorted(email_nan_dict.items(), key=lambda x: x[1])
+plt.scatter(poi_rs,
+            enron_df_new['deferred_income_p'][enron_df_new['poi'] == True],
+            color = 'r', label = 'POI')
+    
+plt.xlabel('Employees')
+plt.ylabel('deferred_income')
+plt.title("Scatterplot of Employees with deferred income")
+plt.legend(loc='upper right')
+plt.show()
 
 
 # In[18]:
 
 
-# Remove outliers
-data_dict.pop("TOTAL", 0)
-data_dict.pop("LAY KENNETH L", 0)
-data_dict.pop("FREVERT MARK A", 0)
-data_dict.pop("BHATNAGAR SANJAY", 0)
+# Scatterplot of total_payments vs deferral_payments w.r.t POI
+plt.scatter(enron_df_new['total_payments'][enron_df_new['poi'] == False],
+            enron_df_new['deferral_payments'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
+
+plt.scatter(enron_df_new['total_payments'][enron_df_new['poi'] == True],
+            enron_df_new['deferral_payments'][enron_df_new['poi'] == True],
+            color = 'r', label = 'POI')
+
+plt.xlabel('Total_payments')
+plt.ylabel('deferral_payments')
+plt.title("Scatterplot of total_payments vs deferral_payments w.r.t POI")
+plt.legend(loc='upper right')
+plt.show() 
+
+
+# In[19]:
+
+
+# Finding the non-POI employee having maximum 'deferral_payments'
+enron_df_new['deferral_payments'].argmax()
+
+
+# In[20]:
+
+
+# Removing the non-POI employee having maximum 'deferral_payments'
+enron_df_new.drop('FREVERT MARK A', axis = 0, inplace = True)
+
+
+# In[21]:
+
+
+# Finding out the integer index locations of POIs and non-POIs
+poi_rs = []
+non_poi_rs = []
+for i in range(len(enron_df_new['poi'])):
+    if enron_df_new['poi'][i] == True:
+        poi_rs.append(i+1)
+    else:
+        non_poi_rs.append(i+1)
+
+# Making a scatterplot
+plt.scatter(non_poi_rs,
+            enron_df_new['long_term_incentive'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
+
+plt.scatter(poi_rs,
+            enron_df_new['long_term_incentive'][enron_df_new['poi'] == True],
+            color = 'r', label = 'POI')
+
+plt.xlabel('Employees')
+plt.ylabel('long_term_incentive')
+plt.title("Scatterplot of Employee Number with long_term_incentive")
+plt.legend(loc='upper left')
+plt.show()
+
+
+# In[22]:
+
+
+enron_df_new['long_term_incentive'].argmax()
+
+
+# In[23]:
+
+
+enron_df_new.drop('MARTIN AMANDA K', axis = 0, inplace = True)
 
 
 # In[24]:
 
 
-### Task 3: Create new feature(s)
-### Lets Create The Follwoing New Features
-### from_this_person_to_poi_ratio
-### from_poi_to_this_person_ratio
-### salary_bonus_ratio
+# Scatterplot of restricted_stock vs 'restricted_stock_deferred' w.r.t POI
 
-def calculate_ratios(val1, val2):
-    result = 0
-    if val1 == 'NaN' or val2 == 'NaN':
-        result = 'NaN'
-    else :
-        result = val1/float(val2)
+plt.scatter(enron_df_new['restricted_stock'][enron_df_new['poi'] == False],
+            enron_df_new['restricted_stock_deferred'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
 
-    return result
+plt.scatter(enron_df_new['restricted_stock'][enron_df_new['poi'] == True],
+            enron_df_new['restricted_stock_deferred'][enron_df_new['poi'] == True],
+            color = 'r', label = 'POI')
 
-for key,value in data_dict.items():
-    value['from_this_person_to_poi_ratio'] = calculate_ratios(value['from_this_person_to_poi'], value['from_messages'])
-    value['from_poi_to_this_person_ratio'] = calculate_ratios(value['from_poi_to_this_person'], value['to_messages'])
-    value['bonus_salary_ratio'] = calculate_ratios(value['bonus'], value['salary'])
+    
+plt.xlabel('restricted_stock')
+plt.ylabel('restricted_stock_deferred')
+plt.title("Scatterplot of restricted_stock vs 'restricted_stock_deferred' w.r.t POI")
+plt.legend(loc='upper right')
+plt.show() 
 
 
-# In[62]:
+# In[25]:
 
 
-
-### Store to my_dataset for easy export below.
-my_dataset = data_dict
-
-###The below list of features were chosen by applying SelectKbest process
-###The Top 11 features were chosen from the list for further analysis
-###The selectKBest code which is below lists the importance of each feature
-features_list = [
- 'poi',
- 'exercised_stock_options',
- 'total_stock_value',
- 'bonus',
- 'salary',
- 'from_this_person_to_poi_ratio',
- 'deferred_income',
- 'bonus_salary_ratio',
- 'long_term_incentive',
- 'restricted_stock',
-#'total_payments',
-#'shared_receipt_with_poi',
-#'loan_advances',
-#'expenses',
-#'from_poi_to_this_person',
-#'other',
-#'from_poi_to_this_person_ratio',
-#'from_this_person_to_poi',
-#'director_fees',
-#'to_messages',
-#'deferral_payments',
-#'from_messages',
-#'restricted_stock_deferred'
-]
+enron_df_new['restricted_stock_deferred'].argmax()
 
 
-# In[63]:
+# In[26]:
 
 
-### Extract features and labels from dataset for local testing
-data = featureFormat(my_dataset, features_list, sort_keys = True)
+enron_df_new.drop('BHATNAGAR SANJAY', axis = 0, inplace = True)
+
+
+# In[27]:
+
+
+plt.scatter(enron_df_new['from_poi_to_this_person'][enron_df_new['poi'] == False],
+            enron_df_new['from_this_person_to_poi'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
+
+plt.scatter(enron_df_new['from_poi_to_this_person'][enron_df_new['poi'] == True],
+            enron_df_new['from_this_person_to_poi'][enron_df_new['poi'] == True],
+            color = 'r', label = 'POI')
+
+    
+plt.xlabel('from_poi_to_this_person')
+plt.ylabel('from_this_person_to_poi')
+plt.title("Scatterplot of count of from and to mails between poi and this_person w.r.t POI")
+plt.legend(loc='upper right')
+plt.show() 
+
+
+# In[28]:
+
+
+enron_df_new['fraction_mail_from_poi'] = enron_df_new['from_poi_to_this_person']/enron_df_new['from_messages'] 
+enron_df_new['fraction_mail_to_poi'] = enron_df_new['from_this_person_to_poi']/enron_df_new['to_messages']
+
+# Scatterplot of fraction of mails from and to between poi and this_person w.r.t POI
+plt.scatter(enron_df_new['fraction_mail_from_poi'][enron_df_new['poi'] == False],
+            enron_df_new['fraction_mail_to_poi'][enron_df_new['poi'] == False],
+            color = 'b', label = 'Not-POI')
+
+plt.scatter(enron_df_new['fraction_mail_from_poi'][enron_df_new['poi'] == True],
+            enron_df_new['fraction_mail_to_poi'][enron_df_new['poi'] == True],
+            color = 'r', label = 'POI')
+
+    
+plt.xlabel('fraction_mail_from_poi')
+plt.ylabel('fraction_mail_to_poi')
+plt.title("Scatterplot of fraction of mails between poi and this_person w.r.t POI")
+plt.legend(loc='upper right')
+plt.show() 
+
+
+# ## Preparing for Feature Processing
+
+# In[29]:
+
+
+# Clean all 'inf' values which we got if the person's from_messages = 0
+enron_df_new = enron_df_new.replace('inf', 0)
+enron_df_new = enron_df_new.fillna(0)
+
+# Converting the above modified dataframe to a dictionary
+enron_dict = enron_df_new.to_dict('index')
+print "Features of modified data_dictionary:-"
+print " Total number of datapoints: ",len(enron_dict)
+print "Total number of features: ",len(enron_dict['METTS MARK'])
+
+
+# In[30]:
+
+
+# Store to my_dataset for easy export below.
+dataset = enron_dict
+
+
+# In[31]:
+
+
+# Features_list is a list of strings, each of which is a feature name.
+# The first feature must be "poi" (target variable).
+
+features_list = ['poi', 'salary', 'bonus', 'long_term_incentive', 'bonus-to-salary_ratio', 'deferral_payments', 'expenses', 
+                 'restricted_stock_deferred', 'restricted_stock', 'deferred_income','fraction_mail_from_poi', 'total_payments',
+                 'other', 'fraction_mail_to_poi', 'from_poi_to_this_person', 'from_this_person_to_poi', 'to_messages', 
+                 'from_messages', 'shared_receipt_with_poi', 'loan_advances', 'director_fees', 'exercised_stock_options',
+                'total_stock_value']
+
+
+# In[32]:
+
+
+# Extract features and labels from dataset for local testing
+data = featureFormat(dataset, features_list, sort_keys = True)
 labels, features = targetFeatureSplit(data)
-print 'Total Number Of Data Points After Removing Outliers And Feature Formatting : ', len(features)
-
-#Code to print importance of each feature and to select best out of them for further analysis
-'''selector = SelectKBest(f_classif, k='all')
-selector.fit(features, labels)
-feature_importances_skb = selector.scores_
-features_list_with_imp = []
-for i in range(len(feature_importances_skb)):
-    features_list_with_imp.append([features_list[i+1], feature_importances_skb[i]])
-features_list_with_imp = sorted(features_list_with_imp, reverse=True, key=itemgetter(1))
-for i in range(len(features_list_with_imp)):
-    print features_list_with_imp[i]'''
 
 
-# In[64]:
+# In[33]:
 
 
+# Split data into training and testing datasets
+from sklearn import model_selection
+features_train, features_test, labels_train, labels_test = model_selection.train_test_split(features, labels, 
+                                                              test_size=0.3, random_state=42)
 
-#Scalling The Data Using MinMaxScaler
+# Stratified ShuffleSplit cross-validator
+from sklearn.model_selection import StratifiedShuffleSplit
+sss = StratifiedShuffleSplit(n_splits=100, test_size=0.3, random_state = 42)
+
+# Importing modules for feature scaling and selection
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+
+# Defining features to be used via the pipeline
+## 1. Feature scaling
 scaler = MinMaxScaler()
-features = scaler.fit_transform(features)
 
-#Splitting Data Into Test And Train Data
-features_train, features_test, labels_train, labels_test =     train_test_split(features, labels, test_size=0.3, random_state=42)
-
-
-# In[65]:
+## 2. Feature Selection
+skb = SelectKBest(f_classif)
 
 
-for person in my_dataset:
-    msg_from_poi = my_dataset[person]['from_poi_to_this_person']
-    to_msg = my_dataset[person]['to_messages']
-    if msg_from_poi != "NaN" and to_msg != "NaN":
-        my_dataset[person]['msg_from_poi_ratio'] = msg_from_poi/float(to_msg)
-    else:
-        my_dataset[person]['msg_from_poi_ratio'] = 0
-    msg_to_poi = my_dataset[person]['from_this_person_to_poi']
-    from_msg = my_dataset[person]['from_messages']
-    if msg_to_poi != "NaN" and from_msg != "NaN":
-        my_dataset[person]['msg_to_poi_ratio'] = msg_to_poi/float(from_msg)
-    else:
-        my_dataset[person]['msg_to_poi_ratio'] = 0
-new_features_list = features_list + ['msg_to_poi_ratio', 'msg_from_poi_ratio']
-
-## Extract features and labels from dataset for local testing
-data = featureFormat(my_dataset, new_features_list, sort_keys = True)
-labels, features = targetFeatureSplit(data)
-
-#Select the best features: 
-#Removes all features whose variance is below 80% 
-from sklearn.feature_selection import VarianceThreshold
-sel = VarianceThreshold(threshold=(.8 * (1 - .8)))
-features = sel.fit_transform(features)
-
-#Removes all but the k highest scoring features
-from sklearn.feature_selection import f_classif
-k = 7
-selector = SelectKBest(f_classif, k=7)
-selector.fit_transform(features, labels)
-print("Best features:")
-scores = zip(new_features_list[1:],selector.scores_)
-sorted_scores = sorted(scores, key = lambda x: x[1], reverse=True)
-print sorted_scores
-optimized_features_list = poi_label + list(map(lambda x: x[0], sorted_scores))[0:k]
-print(optimized_features_list)
-
-# Extract from dataset without new features
-data = featureFormat(my_dataset, optimized_features_list, sort_keys = True)
-labels, features = targetFeatureSplit(data)
-scaler = preprocessing.MinMaxScaler()
-features = scaler.fit_transform(features)
-# Extract from dataset with new features
-data = featureFormat(my_dataset, optimized_features_list +                      ['msg_to_poi_ratio', 'msg_from_poi_ratio'],                      sort_keys = True)
-new_f_labels, new_f_features = targetFeatureSplit(data)
-new_f_features = scaler.fit_transform(new_f_features)
+# In[34]:
 
 
-# In[53]:
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression
 
 
-## Task 4: Try a varity of classifiers
-## Please name your classifier clf for easy export below.
-## Note that if you want to do PCA or other multi-stage operations,
-## you'll need to use Pipelines. For more info:
-## http://scikit-learn.org/stable/modules/pipeline.html
+# In[35]:
 
-def evaluate_clf(grid_search, features, labels, params, iters=100):
-    acc = []
-    pre = []
-    recall = []
-    for i in range(iters):
-        features_train, features_test, labels_train, labels_test =         train_test_split(features, labels, test_size=0.3, random_state=i)
-        grid_search.fit(features_train, labels_train)
-        predictions = grid_search.predict(features_test)
-        acc = acc + [accuracy_score(labels_test, predictions)] 
-        pre = pre + [precision_score(labels_test, predictions)]
-        recall = recall + [recall_score(labels_test, predictions)]
-    print "accuracy: {}".format(mean(acc))
-    print "precision: {}".format(mean(pre))
-    print "recall:    {}".format(mean(recall))
-    best_params = grid_search.best_estimator_.get_params()
-    for param_name in params.keys():
-        print("%s = %r, " % (param_name, best_params[param_name]))
+
+# Classifier 1: Logistic Regression
+lr_clf = LogisticRegression()
+
+pipeline = Pipeline(steps=[("SKB", skb), ("LogisticRegression", lr_clf)])
+
+param_grid = {"SKB__k": range(9, 10),
+              'LogisticRegression__tol': [1e-2, 1e-3, 1e-4],
+              'LogisticRegression__penalty': ['l1', 'l2']
+             }
+
+grid = GridSearchCV(pipeline, param_grid, verbose = 0, cv = sss, scoring = 'f1')
+
+t0 = time()
+#clf = clf.fit(features_train, labels_train)
+grid.fit(features, labels)
+print "Training Time: ", round(time()-t0, 3), "s"
+
+# Best algorithm
+clf = grid.best_estimator_
+
+t0 = time()
+# Refit the best algorithm:
+clf.fit(features_train, labels_train)
+prediction = clf.predict(features_test)
+print "Testing time: ", round(time()-t0, 3), "s"
+
+# Evaluation Measures
+print "Accuracy of DT classifer is  : ", accuracy_score(labels_test, prediction)
+print "Precision of DT classifer is : ", precision_score(prediction, labels_test)
+print "Recall of DT classifer is    : ", recall_score(prediction, labels_test)
+print "f1-score of DT classifer is  : ", f1_score(prediction, labels_test)
+
+
+# In[36]:
+
+
+# Classifier 2: KNN Classifier
+
+clf_knn = KNeighborsClassifier()
+
+sss = StratifiedShuffleSplit(n_splits=10, test_size=0.3, random_state = 42)
+pipeline = Pipeline(steps = [("scaling", scaler), ("SKB", skb),  ("knn",clf_knn)])
+param_grid = {"SKB__k":[3,4,5,6,7,8,9,10,11,12,13,14,15, 16, 17, 18], 
+              "knn__n_neighbors": [3,4,5,6,7,8,9,11,12,13,15],
+              }
+
+grid = GridSearchCV(pipeline, param_grid, verbose = 0, cv = sss, scoring = 'f1')
+
+t0 = time()
+# clf = clf.fit(features_train, labels_train)
+grid.fit(features, labels)
+print "Training time: ", round(time()-t0, 3), "s"
+
+# Best Algorithm
+clf = grid.best_estimator_
+
+t0 = time()
+# Refit the best algorithm:
+clf.fit(features_train, labels_train)
+prediction = clf.predict(features_test)
+print "Testing time: ", round(time()-t0, 3), "s"
+
+# Evaluation measures
+print "Accuracy of DT classifer is  : ", accuracy_score(labels_test, prediction)
+print "Precision of DT classifer is : ", precision_score(prediction, labels_test)
+print "Recall of DT classifer is    : ", recall_score(prediction, labels_test)
+print "f1-score of DT classifer is  : ", f1_score(prediction, labels_test)
+
+
+# In[37]:
+
+
+## Classifier 3: Gaussian Naive Bayes (GaussianNB) classifier
+
+clf_gnb = GaussianNB()
+
+pipeline = Pipeline(steps = [("SKB", skb), ("NaiveBayes", clf_gnb)])
+param_grid = {"SKB__k":[3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]}
+
+grid = GridSearchCV(pipeline, param_grid, verbose = 0, cv = sss, scoring = 'f1')
+
+t0 = time()
+grid.fit(features, labels)
+print "Training time: ", round(time()-t0, 3), "s"
+
+# Best Algorithm
+clf = grid.best_estimator_
+
+t0 = time()
+# Refit the best algorithm:
+clf.fit(features_train, labels_train)
+prediction = clf.predict(features_test)
+print"Testing time: ", round(time()-t0, 3), "s"
+
+print "Accuracy of GaussianNB classifer is  : ", accuracy_score(labels_test, prediction)
+print "Precision of GaussianNB classifer is : ", precision_score(prediction, labels_test)
+print "Recall of GaussianNB classifer is    : ", recall_score(prediction, labels_test)
+print "f1-score of GaussianNB classifer is  : ", f1_score(prediction, labels_test)
+
+
+# In[38]:
+
+
+# Obtaining the boolean list showing selected features
+features_selected_bool = grid.best_estimator_.named_steps['SKB'].get_support()
+
+# Finding the features selected by SelectKBest
+features_selected_list = [x for x, y in zip(features_list[1:], features_selected_bool) if y]
+print "Total number of features selected by SelectKBest algorithm: ", len(features_selected_list)
+
+# Finding the score of features 
+feature_scores =  grid.best_estimator_.named_steps['SKB'].scores_
+
+# Finding the score of features selected by selectKBest
+feature_selected_scores = feature_scores[features_selected_bool]
+
+# Creating a pandas dataframe and arranging the features based on their scores and ranking them 
+imp_features_df = pd.DataFrame({'Features_Selected':features_selected_list, 'Features_score':feature_selected_scores})
+imp_features_df.sort_values('Features_score', ascending = False, inplace = True)
+Rank = pd.Series(list(range(1, len(features_selected_list)+1)))
+imp_features_df.set_index(Rank, inplace = True)
+
+print "The following table shows the feature selected along with its corresponding scores."
+imp_features_df
 
 
 # In[42]:
 
 
-from sklearn import naive_bayes        
-nb_clf = naive_bayes.GaussianNB()
-nb_param = {}
-nb_grid_search = GridSearchCV(nb_clf, nb_param)
-
-print("Evaluate naive bayes model")
-evaluate_clf(nb_grid_search, features, labels, nb_param)
-
-
-# In[47]:
-
-
-print("Evaluate naive bayes model using dataset with new features")
-evaluate_clf(nb_grid_search, new_f_features, new_f_labels, nb_param)
-
-
-# In[49]:
-
-
-from sklearn import linear_model
-from sklearn.pipeline import Pipeline
-lo_clf = Pipeline(steps=[
-        ('scaler', preprocessing.StandardScaler()),
-        ('classifier', linear_model.LogisticRegression())])
-         
-lo_param = {'classifier__tol': [1, 0.1, 0.01, 0.001, 0.0001],             'classifier__C': [0.1, 0.01, 0.001, 0.0001]}
-lo_grid_search = GridSearchCV(lo_clf, lo_param)
-print("Evaluate logistic regression model")
-evaluate_clf(lo_grid_search, features, labels, lo_param)
-
-
-# In[50]:
-
-
-from sklearn import svm
-s_clf = svm.SVC()
-s_param = {'kernel': ['rbf', 'linear', 'poly'], 'C': [0.1, 1, 10, 100, 1000],           'gamma': [1, 0.1, 0.01, 0.001, 0.0001], 'random_state': [42]}    
-s_grid_search = GridSearchCV(s_clf, s_param)
-print("Evaluate svm model")
-evaluate_clf(s_grid_search, features, labels, s_param)
-
-
-# In[56]:
-
-
-# Provided to give you a starting point. Try a variety of classifiers.
-## Gaussian Naive Bayes Classifier
-clf = GaussianNB()
-
-### Decision Tree Classifier
-## Best Params Reported By GridSearchCV {'min_samples_split': 11, 'splitter': 'random', 'criterion': 'entropy', 'max_depth': 2, 'class_weight': None}
-clf = DecisionTreeClassifier(min_samples_split=11, splitter='random', criterion='entropy', max_depth=2, class_weight=None)
-clf = DecisionTreeClassifier()
-
-### Random Forest Classifier
-## Best Params Reported By GridSearchCV {'min_samples_split': 4, 'criterion': 'gini', 'max_depth': 7, 'class_weight': None}
-clf = RandomForestClassifier(min_samples_split=4, criterion='gini', max_depth=7, class_weight=None)
-
-## KNeighborsClassifier
-## Best Params Reported By GridSearchCV  {'n_neighbors': 6, 'weights': 'uniform', 'algorithm': 'auto'}
-clf = KNeighborsClassifier(n_neighbors=6, weights='uniform', algorithm='auto')
-
-## Params For Tuning DecisionTree
-'''params = {'criterion':['gini','entropy'],
-          'max_depth':[i for i in range(2,15)],
-          'min_samples_split':[i for i in range(2,15)],
-          #'splitter' : ['best', 'random'],
-          'class_weight' : [None, 'balanced']
-         }'''
-
-## Params For Tuning KNN
-'''params = {'n_neighbors' : [i for i in range(5,20)],
-          'weights': ['uniform', 'distance'],
-          'algorithm':['auto', 'ball_tree', 'kd_tree', 'brute'],
-          }'''
-
-
-
-clf.fit(features_train, labels_train)
-pred = clf.predict(features_test)
-
-
-# In[57]:
-
-
-### Task 5: Tune your classifier to achieve better than .3 precision and recall 
-### using our testing script. Check the tester.py script in the final project
-### folder for details on the evaluation method, especially the test_classifier
-### function. Because of the small size of the dataset, the script uses
-### stratified shuffle split cross validation. For more info: 
-### http://scikit-learn.org/stable/modules/generated/sklearn.cross_validation.StratifiedShuffleSplit.html
-print '------------------------------------------------------'
-print 'Metrics:'
-print 'Recall Score: ', recall_score(labels_test, pred)
-print 'Precision Score: ', precision_score(labels_test, pred)
-print classification_report(labels_test, pred)
-print '------------------------------------------------------'
+dump_classifier_and_data(clf, enron_dict, features_list)
 
 
 # In[ ]:
