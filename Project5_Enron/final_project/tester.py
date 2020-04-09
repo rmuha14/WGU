@@ -6,7 +6,6 @@
     requires that the algorithm, dataset, and features list
     be written to my_classifier.pkl, my_dataset.pkl, and
     my_feature_list.pkl, respectively
-
     that process should happen at the end of poi_id.py
 """
 

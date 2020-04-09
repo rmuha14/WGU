@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[3]:
+# In[8]:
 
 
 import pickle
-
+import sys
 import numpy as np
 import pandas as pd
 from time import time
+sys.path.append("../tools/")
 
 from feature_format import featureFormat, targetFeatureSplit
 from tester import dump_classifier_and_data
@@ -28,7 +29,7 @@ with open("final_project_dataset.pkl", "rb") as data_file:
     data_dict = pickle.load(data_file)
 
 
-# In[4]:
+# In[9]:
 
 
 # Converting the given pickled Enron data to a pandas dataframe.
@@ -40,7 +41,7 @@ enron_df.set_index(employees, inplace=True)
 enron_df.head()
 
 
-# In[5]:
+# In[10]:
 
 
 print "Size of the enron dataframe: ", enron_df.shape
@@ -53,13 +54,13 @@ print "Total number of POI's in the given dataset: ", poi_count.iloc[1]
 print "Total number of non-POI's in the given dataset: ", poi_count.iloc[0]
 
 
-# In[6]:
+# In[11]:
 
 
 enron_df.dtypes
 
 
-# In[7]:
+# In[12]:
 
 
 # Converting the datatypes in the given pandas dataframe 
@@ -70,7 +71,7 @@ enron_df_new = enron_df.apply(lambda x : pd.to_numeric(x, errors = 'coerce')).co
 enron_df_new.head()
 
 
-# In[8]:
+# In[13]:
 
 
 # Dropping column 'email_address' as it is not required in analysis.
@@ -96,7 +97,7 @@ enron_df_new.shape
 # 
 # Drawing scatterplot of Bonus vs Salary of Enron employees.
 
-# In[9]:
+# In[14]:
 
 
 plt.scatter(enron_df_new['salary'][enron_df_new['poi'] == True],
@@ -114,14 +115,14 @@ plt.legend(loc='upper left')
 plt.show() 
 
 
-# In[10]:
+# In[15]:
 
 
 # Finding the non-POI employee having maximum salary
 enron_df_new['salary'].argmax()
 
 
-# In[11]:
+# In[16]:
 
 
 # Deleting the row 'Total' from the dataframe
@@ -143,33 +144,33 @@ plt.legend(loc='upper left')
 plt.show() 
 
 
-# In[12]:
+# In[17]:
 
 
 enron_df_new['bonus-to-salary_ratio'] = enron_df_new['bonus']/enron_df_new['salary']
 
 
-# In[13]:
+# In[18]:
 
 
 # Features of the index 'THE TRAVEL AGENCY IN THE PARK'
 enron_df_new.loc['THE TRAVEL AGENCY IN THE PARK']
 
 
-# In[14]:
+# In[19]:
 
 
 # Deleting the row with index 'THE TRAVEL AGENCY IN THE PARK'
 enron_df_new.drop('THE TRAVEL AGENCY IN THE PARK', axis = 0, inplace = True)
 
 
-# In[15]:
+# In[20]:
 
 
 enron_df_new['deferred_income'].describe()
 
 
-# In[16]:
+# In[21]:
 
 
 # Finding out the integer index locations of POIs and non-POIs.
@@ -185,7 +186,7 @@ print("Length of po list: ", len(poi_rs))
 print("Length non-poi list: ", len(non_poi_rs))
 
 
-# In[17]:
+# In[22]:
 
 
 # Since 'deferred_income' is negative, for intuitive understanding,
@@ -207,7 +208,7 @@ plt.legend(loc='upper right')
 plt.show()
 
 
-# In[18]:
+# In[23]:
 
 
 # Scatterplot of total_payments vs deferral_payments w.r.t POI
@@ -226,21 +227,21 @@ plt.legend(loc='upper right')
 plt.show() 
 
 
-# In[19]:
+# In[24]:
 
 
 # Finding the non-POI employee having maximum 'deferral_payments'
 enron_df_new['deferral_payments'].argmax()
 
 
-# In[20]:
+# In[25]:
 
 
 # Removing the non-POI employee having maximum 'deferral_payments'
 enron_df_new.drop('FREVERT MARK A', axis = 0, inplace = True)
 
 
-# In[21]:
+# In[26]:
 
 
 # Finding out the integer index locations of POIs and non-POIs
@@ -268,19 +269,19 @@ plt.legend(loc='upper left')
 plt.show()
 
 
-# In[22]:
+# In[27]:
 
 
 enron_df_new['long_term_incentive'].argmax()
 
 
-# In[23]:
+# In[28]:
 
 
 enron_df_new.drop('MARTIN AMANDA K', axis = 0, inplace = True)
 
 
-# In[24]:
+# In[29]:
 
 
 # Scatterplot of restricted_stock vs 'restricted_stock_deferred' w.r.t POI
@@ -301,19 +302,19 @@ plt.legend(loc='upper right')
 plt.show() 
 
 
-# In[25]:
+# In[30]:
 
 
 enron_df_new['restricted_stock_deferred'].argmax()
 
 
-# In[26]:
+# In[31]:
 
 
 enron_df_new.drop('BHATNAGAR SANJAY', axis = 0, inplace = True)
 
 
-# In[27]:
+# In[32]:
 
 
 plt.scatter(enron_df_new['from_poi_to_this_person'][enron_df_new['poi'] == False],
@@ -332,7 +333,7 @@ plt.legend(loc='upper right')
 plt.show() 
 
 
-# In[28]:
+# In[33]:
 
 
 enron_df_new['fraction_mail_from_poi'] = enron_df_new['from_poi_to_this_person']/enron_df_new['from_messages'] 
@@ -357,7 +358,7 @@ plt.show()
 
 # ## Preparing for Feature Processing
 
-# In[29]:
+# In[34]:
 
 
 # Clean all 'inf' values which we got if the person's from_messages = 0
@@ -371,14 +372,14 @@ print " Total number of datapoints: ",len(enron_dict)
 print "Total number of features: ",len(enron_dict['METTS MARK'])
 
 
-# In[30]:
+# In[45]:
 
 
 # Store to my_dataset for easy export below.
-dataset = enron_dict
+my_dataset = enron_dict
 
 
-# In[31]:
+# In[46]:
 
 
 # Features_list is a list of strings, each of which is a feature name.
@@ -391,7 +392,7 @@ features_list = ['poi', 'salary', 'bonus', 'long_term_incentive', 'bonus-to-sala
                 'total_stock_value']
 
 
-# In[32]:
+# In[47]:
 
 
 # Extract features and labels from dataset for local testing
@@ -399,7 +400,7 @@ data = featureFormat(dataset, features_list, sort_keys = True)
 labels, features = targetFeatureSplit(data)
 
 
-# In[33]:
+# In[48]:
 
 
 # Split data into training and testing datasets
@@ -425,7 +426,7 @@ scaler = MinMaxScaler()
 skb = SelectKBest(f_classif)
 
 
-# In[34]:
+# In[49]:
 
 
 from sklearn.neighbors import KNeighborsClassifier
@@ -433,7 +434,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import LogisticRegression
 
 
-# In[35]:
+# In[50]:
 
 
 # Classifier 1: Logistic Regression
@@ -469,7 +470,7 @@ print "Recall of DT classifer is    : ", recall_score(prediction, labels_test)
 print "f1-score of DT classifer is  : ", f1_score(prediction, labels_test)
 
 
-# In[36]:
+# In[51]:
 
 
 # Classifier 2: KNN Classifier
@@ -505,7 +506,7 @@ print "Recall of DT classifer is    : ", recall_score(prediction, labels_test)
 print "f1-score of DT classifer is  : ", f1_score(prediction, labels_test)
 
 
-# In[37]:
+# In[52]:
 
 
 ## Classifier 3: Gaussian Naive Bayes (GaussianNB) classifier
@@ -536,7 +537,7 @@ print "Recall of GaussianNB classifer is    : ", recall_score(prediction, labels
 print "f1-score of GaussianNB classifer is  : ", f1_score(prediction, labels_test)
 
 
-# In[38]:
+# In[53]:
 
 
 # Obtaining the boolean list showing selected features
@@ -562,10 +563,10 @@ print "The following table shows the feature selected along with its correspondi
 imp_features_df
 
 
-# In[42]:
+# In[54]:
 
 
-dump_classifier_and_data(clf, enron_dict, features_list)
+dump_classifier_and_data(clf, my_dataset, features_list)
 
 
 # In[ ]:
