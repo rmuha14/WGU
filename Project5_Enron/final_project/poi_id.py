@@ -396,7 +396,7 @@ features_list = ['poi', 'salary', 'bonus', 'long_term_incentive', 'bonus-to-sala
 
 
 # Extract features and labels from dataset for local testing
-data = featureFormat(dataset, features_list, sort_keys = True)
+data = featureFormat(my_dataset, features_list, sort_keys = True)
 labels, features = targetFeatureSplit(data)
 
 
